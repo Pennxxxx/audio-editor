@@ -28,9 +28,11 @@ body {
   background: var(--bg);
   color: var(--text);
   height: 100vh;
+  height: 100dvh; /* 动态视口高度，避免手机地址栏干扰 */
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ===== 顶部工具栏 ===== */
@@ -248,6 +250,7 @@ body {
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
+  padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   background: var(--bg2);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -307,6 +310,7 @@ body {
   justify-content: space-between;
   gap: 12px;
   padding: 8px 16px;
+  padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   background: var(--bg2);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
@@ -477,15 +481,32 @@ body.drag-active #waveform-empty { pointer-events: all; }
 
 /* ===== 移动端适配 ===== */
 @media (max-width: 768px) {
+  body {
+    overflow-y: auto;
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+  }
+
   .workspace {
     flex-direction: column;
+    flex: none;
   }
 
   .panel-left {
     width: 100%;
-    max-height: 140px;
+    max-height: 120px;
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+
+  .panel-right {
+    flex: none;
+    min-height: 60vh;
+  }
+
+  .waveform-container {
+    min-height: 180px;
   }
 
   .track-list {
@@ -523,6 +544,7 @@ body.drag-active #waveform-empty { pointer-events: all; }
   .playback-bar {
     gap: 8px;
     padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     flex-wrap: wrap;
   }
 
@@ -534,12 +556,13 @@ body.drag-active #waveform-empty { pointer-events: all; }
 
   .cut-toolbar {
     padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
     gap: 8px;
   }
 
-  .cut-region { gap: 4px; }
+  .cut-region { gap: 4px; flex-wrap: wrap; }
   .time-input { width: 72px; font-size: 11px; padding: 4px 6px; }
-  .cut-actions { gap: 4px; }
+  .cut-actions { gap: 4px; flex-wrap: wrap; }
 
   .modal {
     width: 92vw;

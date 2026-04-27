@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>音频剪辑工具</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- WaveSurfer.js -->
+  <script src="https://unpkg.com/wavesurfer.js@7/dist/wavesurfer.min.js"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/regions.min.js"></script>
+  <script src="https://unpkg.com/wavesurfer.js@7/dist/plugins/timeline.min.js"></script>
+</head>
+<body>
+
+<!-- ======= 顶部工具栏 ======= -->
+<header class="topbar">
+  <div class="brand">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="8" fill="#6C63FF"/>
+      <path d="M7 14 Q10 6 14 14 Q18 22 21 14" stroke="white" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    </svg>
+    <span>音频剪辑工具</span>
+  </div>
+  <div class="toolbar-actions">
+    <button id="btn-import" class="btn btn-primary" title="导入音频文件 (支持 MP3/WAV/OGG/FLAC/AAC)">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      导入音频
+    </button>
+    <input type="file" id="file-input" accept="audio/*,.mp3,.wav,.ogg,.flac,.aac,.m4a" multiple hidden />
+    <button id="btn-export" class="btn btn-success" disabled>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      导出音频
+    </button>
+  </div>
+</header>
+
+<!-- ======= 主体 ======= -->
+<main class="workspace">
+
+  <!-- 左侧 - 文件列表 -->
+  <aside class="panel-left">
+    <div class="panel-header">
+      <span>音频片段</span>
+      <button id="btn-merge" class="btn btn-sm btn-outline" disabled title="将列表中所有片段按顺序合并">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 21 12 15 6"/><path d="M3 12h18"/></svg>
+        合并
+      </button>
+    </div>
+    <ul id="track-list" class="track-list">
+      <li class="empty-hint">拖拽音频文件到此处，或点击「导入音频」</li>
+    </ul>
+  </aside>
+
+  <!-- 右侧 - 编辑器 -->
+  <section class="panel-right">
+
+    <!-- 波形区 -->
+    <div class="waveform-container" id="waveform-container">
+      <div id="waveform-empty" class="waveform-empty">
+        <div class="drop-zone" id="drop-zone">
+          <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+            <circle cx="32" cy="32" r="30" stroke="#6C63FF" stroke-width="2" stroke-dasharray="6 4"/>
+            <path d="M32 20v16M24 28l8-8 8 8" stroke="#6C63FF" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M20 44 Q32 36 44 44" stroke="#6C63FF" stroke-width="2" fill="none" stroke-linecap="round"/>
+          </svg>
+          <p>拖拽音频文件到这里</p>
+          <p class="hint">支持 MP3 · WAV · OGG · FLAC · AAC · M4A</p>
+        </div>
+      </div>
+      <div id="waveform" style="display:none"></div>
+      <div id="timeline" style="display:none"></div>
+    </div>
+
+    <!-- 播放控制栏 -->
+    <div class="playback-bar" id="playback-bar" style="display:none">
+      <div class="playback-left">
+        <button id="btn-skip-back" class="ctrl-btn" title="跳到开头">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 6h2v12H6zm3.5 6 8.5 6V6z"/></svg>
+        </button>
+        <button id="btn-play" class="ctrl-btn ctrl-play" title="播放/暂停 (空格)">
+          <svg id="icon-play" width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          <svg id="icon-pause" width="22" height="22" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+        </button>
+        <button id="btn-skip-fwd" class="ctrl-btn" title="跳到结尾">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M6 18l8.5-6L6 6v12zm2-6zM16 6h2v12h-2z"/></svg>
+        </button>
+      </div>
+      <div class="playback-time">
+        <span id="time-current">0:00.000</span>
+        <span class="sep">/</span>
+        <span id="time-total">0:00.000</span>
+      </div>
+      <div class="playback-right">
+        <label class="label-sm">速度</label>
+        <select id="speed-select" class="select-sm">
+          <option value="0.5">0.5x</option>
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+        <label class="label-sm">音量</label>
+        <input type="range" id="volume-slider" min="0" max="1" step="0.05" value="1" class="slider-sm" />
+      </div>
+    </div>
+
+    <!-- 裁剪工具栏 -->
+    <div class="cut-toolbar" id="cut-toolbar" style="display:none">
+      <div class="cut-region">
+        <span class="label-sm">选区</span>
+        <input type="number" id="region-start" class="time-input" placeholder="开始(s)" min="0" step="0.001" />
+        <span class="label-sm">—</span>
+        <input type="number" id="region-end" class="time-input" placeholder="结束(s)" min="0" step="0.001" />
+        <button id="btn-set-region" class="btn btn-sm btn-outline">设置选区</button>
+      </div>
+      <div class="cut-actions">
+        <button id="btn-cut" class="btn btn-sm btn-warning" disabled title="保留选区内的音频">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+          裁剪（保留选区）
+        </button>
+        <button id="btn-delete-region" class="btn btn-sm btn-danger" disabled title="删除选区内的音频">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+          删除选区
+        </button>
+        <button id="btn-clear-region" class="btn btn-sm btn-ghost">清除选区</button>
+      </div>
+    </div>
+
+  </section>
+</main>
+
+<!-- ======= 导出对话框 ======= -->
+<div id="export-modal" class="modal-overlay" style="display:none">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>导出音频</h3>
+      <button id="modal-close" class="modal-close">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>文件名</label>
+        <input type="text" id="export-filename" value="output" class="input-text" />
+      </div>
+      <div class="form-row">
+        <label>格式</label>
+        <div class="format-tabs">
+          <button class="format-tab active" data-fmt="mp3">MP3</button>
+          <button class="format-tab" data-fmt="wav">WAV</button>
+        </div>
+      </div>
+      <div id="mp3-options" class="form-row">
+        <label>MP3 比特率</label>
+        <select id="mp3-bitrate" class="select-md">
+          <option value="64">64 kbps（小文件）</option>
+          <option value="128" selected>128 kbps（标准）</option>
+          <option value="192">192 kbps（高质量）</option>
+          <option value="320">320 kbps（无损级）</option>
+        </select>
+      </div>
+      <div id="wav-options" class="form-row" style="display:none">
+        <label>WAV 位深</label>
+        <select id="wav-bitdepth" class="select-md">
+          <option value="16" selected>16-bit（标准）</option>
+          <option value="24">24-bit（专业）</option>
+          <option value="32">32-bit float（最高精度）</option>
+        </select>
+      </div>
+      <div class="export-info" id="export-info">
+        <span id="export-duration-label">时长：—</span>
+        <span id="export-size-hint">预估大小：—</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <div id="export-progress-area" style="display:none">
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="export-progress-fill"></div>
+        </div>
+        <span id="export-progress-label">处理中...</span>
+      </div>
+      <button id="btn-do-export" class="btn btn-success">开始导出</button>
+    </div>
+  </div>
+</div>
+
+<!-- ======= 提示 Toast ======= -->
+<div id="toast" class="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

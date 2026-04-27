@@ -495,25 +495,111 @@ dom.btnDeleteRegion.addEventListener('click', async () => {
   await replaceActiveBuffer(merged, `已删除 ${formatTime(start)} ~ ${formatTime(end)}`);
 });
 
-/* ===================== 合并轨道 ===================== */
+/* ===================== 合并轨道（带进度反馈） ===================== */
 dom.btnMerge.addEventListener('click', async () => {
   if (state.tracks.length < 2) { showToast('至少需要 2 个音频片段', 'error'); return; }
-  showToast('正在合并…', '', 10000);
+
+  const mergeModal   = document.getElementById('merge-modal');
+  const mergeStatus  = document.getElementById('merge-status');
+  const mergeStepList= document.getElementById('merge-step-list');
+  const mergeFill    = document.getElementById('merge-progress-fill');
+  const mergeLabel   = document.getElementById('merge-progress-label');
+  const mergeTime    = document.getElementById('merge-progress-time');
+
+  // 显示进度对话框
+  mergeModal.style.display = 'flex';
+  mergeFill.style.width    = '0%';
+  mergeLabel.textContent   = '0%';
+  mergeTime.textContent    = '';
+  mergeStepList.innerHTML  = '';
+
+  const startTime = Date.now();
+
+  function setMergeProgress(pct) {
+    mergeFill.style.width = pct + '%';
+    mergeLabel.textContent = pct + '%';
+    const elapsed = (Date.now() - startTime) / 1000;
+    if (pct > 0 && pct < 100) {
+      const est = (elapsed / pct * (100 - pct)).toFixed(0);
+      mergeTime.textContent = `预计剩余 ${est} 秒`;
+    } else if (pct >= 100) {
+      mergeTime.textContent = `耗时 ${elapsed.toFixed(1)} 秒`;
+    }
+  }
+
+  function addStep(text, status) {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;padding:6px 10px;border-radius:6px;background:var(--bg3);';
+    const icon = status === 'done' ? '✅' : status === 'active' ? '⏳' : '⬜';
+    div.innerHTML = `<span>${icon}</span><span style="color:${status === 'active' ? 'var(--accent)' : status === 'done' ? 'var(--success)' : 'var(--text-muted)'}">${text}</span>`;
+    mergeStepList.appendChild(div);
+    return div;
+  }
+
+  function updateStep(div, text, status) {
+    const icon = status === 'done' ? '✅' : status === 'active' ? '⏳' : '⬜';
+    const color = status === 'active' ? 'var(--accent)' : status === 'done' ? 'var(--success)' : 'var(--text-muted)';
+    div.innerHTML = `<span>${icon}</span><span style="color:${color}">${text}</span>`;
+  }
+
   try {
-    for (const t of state.tracks) {
+    // 第一步：解码所有音频
+    const decodeStep = addStep('解码音频文件…', 'active');
+    mergeStatus.textContent = `正在解码音频（共 ${state.tracks.length} 个文件）…`;
+
+    const totalTracks = state.tracks.length;
+    for (let i = 0; i < totalTracks; i++) {
+      const t = state.tracks[i];
       if (!t.audioBuffer) {
-        const ctx    = new (window.AudioContext || window.webkitAudioContext)();
+        updateStep(decodeStep, `解码音频文件（${i+1}/${totalTracks}）…`, 'active');
+        mergeStatus.textContent = `正在解码：${t.name}`;
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
         t.audioBuffer = await ctx.decodeAudioData(t.arrayBuffer.slice(0));
-        t.duration    = t.audioBuffer.duration;
+        t.duration = t.audioBuffer.duration;
         await ctx.close();
       }
+      setMergeProgress(Math.round(((i + 1) / totalTracks) * 40));
+      // 让 UI 有机会刷新
+      await new Promise(r => setTimeout(r, 0));
     }
+    updateStep(decodeStep, `解码完成（${totalTracks} 个文件）`, 'done');
+
+    // 第二步：合并 AudioBuffer
+    const concatStep = addStep('合并音频数据…', 'active');
+    mergeStatus.textContent = '正在合并音频数据…';
+    setMergeProgress(50);
+    await new Promise(r => setTimeout(r, 0));
+
     const merged = concatAudioBuffers(state.tracks.map(t => t.audioBuffer));
-    if (!merged) { showToast('合并失败', 'error'); return; }
+    if (!merged) {
+      showToast('合并失败', 'error');
+      mergeModal.style.display = 'none';
+      return;
+    }
+    updateStep(concatStep, `合并完成（总时长 ${formatTime(merged.duration)}）`, 'done');
+    setMergeProgress(65);
+
+    // 第三步：编码 WAV
+    const encodeStep = addStep('编码 WAV 文件…', 'active');
+    mergeStatus.textContent = '正在编码合并后的音频…';
+    await new Promise(r => setTimeout(r, 0));
 
     const names   = state.tracks.map(t => t.name.replace(/\.[^.]+$/, '')).join('+');
     const outName = (names.length > 40 ? names.slice(0,40)+'…' : names) + '_merged.wav';
-    const wav     = audioBufferToWav(merged, 16);
+
+    // 对大文件分块编码以展示进度
+    const wav = audioBufferToWavWithProgress(merged, 16, (pct) => {
+      setMergeProgress(65 + Math.round(pct * 0.3));
+      mergeStatus.textContent = `编码中… ${Math.round(pct)}%`;
+    });
+
+    updateStep(encodeStep, '编码完成', 'done');
+    setMergeProgress(95);
+
+    // 第四步：替换轨道
+    const finalStep = addStep('生成最终文件…', 'active');
+    mergeStatus.textContent = '正在加载合并结果…';
+    await new Promise(r => setTimeout(r, 0));
 
     const mt = {
       id: uid(), name: outName,
@@ -523,12 +609,72 @@ dom.btnMerge.addEventListener('click', async () => {
     state.tracks = [mt];
     dom.btnMerge.disabled = true;
     await loadTrackToEditor(mt);
+
+    updateStep(finalStep, '完成！', 'done');
+    setMergeProgress(100);
+    mergeStatus.textContent = '合并成功！';
+
+    // 1.5 秒后关闭对话框
+    await new Promise(r => setTimeout(r, 1500));
+    mergeModal.style.display = 'none';
     showToast('合并完成！', 'success');
+
   } catch(e) {
     console.error(e);
+    mergeStatus.textContent = '合并出错：' + e.message;
+    mergeStatus.style.color = 'var(--danger)';
     showToast('合并出错：' + e.message, 'error');
+    await new Promise(r => setTimeout(r, 2000));
+    mergeModal.style.display = 'none';
   }
 });
+
+/* ===================== WAV 编码器（带进度回调） ===================== */
+function audioBufferToWavWithProgress(buffer, bitDepth, onProgress) {
+  const ch      = buffer.numberOfChannels;
+  const sr      = buffer.sampleRate;
+  const len     = buffer.length;
+  const is32f   = bitDepth === 32;
+  const bps     = bitDepth === 24 ? 3 : bitDepth === 32 ? 4 : 2;
+  const dataSz  = len * ch * bps;
+  const ab      = new ArrayBuffer(44 + dataSz);
+  const v       = new DataView(ab);
+
+  const ws = (o, s) => { for(let i=0;i<s.length;i++) v.setUint8(o+i, s.charCodeAt(i)); };
+  const wu = (o, n) => v.setUint16(o, n, true);
+  const wd = (o, n) => v.setUint32(o, n, true);
+
+  ws(0,'RIFF'); wd(4, 36+dataSz); ws(8,'WAVE');
+  ws(12,'fmt '); wd(16, 16);
+  wu(20, is32f ? 3 : 1); wu(22, ch);
+  wd(24, sr); wd(28, sr * ch * bps);
+  wu(32, ch * bps); wu(34, bitDepth);
+  ws(36,'data'); wd(40, dataSz);
+
+  let off = 44;
+  const REPORT_INTERVAL = 50000; // 每5万采样报告一次进度
+  for (let i = 0; i < len; i++) {
+    for (let c = 0; c < ch; c++) {
+      const val = buffer.getChannelData(c)[i];
+      if (is32f) {
+        v.setFloat32(off, val, true); off += 4;
+      } else if (bitDepth === 24) {
+        const x = Math.max(-1, Math.min(1, val));
+        const n = Math.round(x < 0 ? x * 8388608 : x * 8388607) & 0xFFFFFF;
+        v.setUint8(off, n & 0xFF); v.setUint8(off+1, (n>>8)&0xFF); v.setUint8(off+2, (n>>16)&0xFF);
+        off += 3;
+      } else {
+        const x = Math.max(-1, Math.min(1, val));
+        v.setInt16(off, x < 0 ? x*32768 : x*32767, true); off += 2;
+      }
+    }
+    if (i % REPORT_INTERVAL === 0 && onProgress) {
+      onProgress((i / len) * 100);
+    }
+  }
+  if (onProgress) onProgress(100);
+  return ab;
+}
 
 /* ===================== 导出对话框 ===================== */
 dom.btnExport.addEventListener('click', () => {
